@@ -14,16 +14,18 @@ def main():
                        help='Server URL (default: http://localhost:8080)')
     parser.add_argument('--workers', type=int, default=1, 
                        help='Number of parallel workers (default: 1)')
-    parser.add_argument('--chunk-size', type=int, default=4*1024*1024, 
-                       help='Base chunk size in bytes (default: 4MB)')
+    parser.add_argument('--chunk-size', type=int, default=8*1024*1024, 
+                       help='Base chunk size in bytes (default: 8MB)')
     parser.add_argument('--status', help='Check status of existing session ID')
+    parser.add_argument('--encrypt', action='store_true', help='Do encryption before sending chunks')
     
     args = parser.parse_args()
     
     client = DFPClient(
         server_url=args.server,
         max_workers=args.workers,
-        chunk_size=args.chunk_size
+        chunk_size=args.chunk_size,
+        enable_encryption=args.encrypt,
     )
     
     if args.status:
@@ -51,7 +53,7 @@ def main():
             print(f"File: {result['filename']}")
             print(f"Size: {result['file_size']} bytes")
             print(f"Time: {result['transfer_time']:.2f} seconds")
-            print(f"Speed: {result['speed_mbps']:.2f} MB/s")
+            print(f"Speed: {result['speed_mbps']:.5f} MB/s")
             print(f"Chunks: {result['chunks_uploaded']}")
         else:
             print("❌ Failed!")

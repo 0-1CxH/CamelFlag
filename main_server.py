@@ -5,8 +5,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='File Transfer Server')
     parser.add_argument('--host', default='localhost', help='Server host (default: localhost)')
     parser.add_argument('--port', type=int, default=8080, help='Server port (default: 8080)')
+    parser.add_argument('--encrypt', action='store_true', help='Do encryption before sending chunks')
     
     args = parser.parse_args()
     print(f"DFP Server will be available at http://{args.host}:{args.port}")
     print("Press Ctrl+C to stop the server")
-    run_server(args.host, args.port) 
+    run_server(args.host, args.port, enable_encryption=args.encrypt)

@@ -19,13 +19,11 @@ import logging
 import signal
 import sys
 
-# from cipher import DFPCipher
-# cipher_instance = DFPCipher()
-# rsa_key = cipher_instance.keygen(input("ENTER YOUR PASSKEY:"))
-# print(rsa_key.export_key())
+
+from .cipher import DFPCipher
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class DFPHandler(BaseHTTPRequestHandler):
@@ -33,6 +31,7 @@ class DFPHandler(BaseHTTPRequestHandler):
     # Class variables to store session data
     sessions = {}
     session_lock = threading.Lock()
+    cipher = None
     
     def __init__(self, *args, **kwargs):
         self.max_workers = 5  # Reduced from 10 to prevent connection overload
@@ -78,9 +77,13 @@ class DFPHandler(BaseHTTPRequestHandler):
     
     def _handle_create_session(self, query_string):
         """Create a new file transfer session"""
+        import base64
         try:
             params = parse_qs(query_string)
             filename = params.get('f', [''])[0]
+            if self.cipher is not None:
+                filename = base64.b64decode(filename)
+                filename = self.cipher.decrypt(filename, decode=True, parallel_size=1) 
             total_size = int(params.get('s', [0])[0])
             total_chunks = int(params.get('c', [0])[0])
             file_hash = params.get('h', [''])[0]
@@ -213,7 +216,8 @@ class DFPHandler(BaseHTTPRequestHandler):
             try:
                 chunk_data = base64.b64decode(chunk_data_b64)
                 # decrypt
-                # chunk_data = cipher_instance.decrypt(chunk_data)
+                # if self.cipher is not None:
+                #     chunk_data = self.cipher.decrypt(chunk_data)
             except Exception as e:
                 return {'success': False, 'error': f'Invalid base64 data: {str(e)}'}
             
@@ -297,14 +301,22 @@ class DFPHandler(BaseHTTPRequestHandler):
                 return {'success': False, 'error': f'Missing chunks: {missing_chunks}'}
             
             # Reconstruct file
-            output_path = os.path.join(os.getcwd(), session['filename'])
+            os.makedirs(os.path.join(os.getcwd(), 'dfp_received'), exist_ok=True)
+            output_path = os.path.join(os.getcwd(), 'dfp_received', session['filename'])
             
+
             try:
                 with open(output_path, 'wb') as output_file:
                     for i in range(session['total_chunks']):
                         chunk_file = session['chunk_files'][i]
                         with open(chunk_file, 'rb') as chunk_f:
-                            output_file.write(chunk_f.read())
+                            chunk_data = chunk_f.read()
+                            if self.cipher is not None:
+                                start_time = time.time()
+                                logger.debug("Decrypting current chunk")
+                                chunk_data = self.cipher.decrypt(chunk_data, parallel_size=os.cpu_count())
+                                logger.debug(f"Chunk decrypted, took {time.time() - start_time}s")
+                            output_file.write(chunk_data)
             except Exception as e:
                 return {'success': False, 'error': f'Failed to reconstruct file: {str(e)}'}
             
@@ -425,13 +437,16 @@ def signal_handler(signum, frame):
     cleanup_sessions()
     sys.exit(0)
 
-def run_server(host='localhost', port=8080):
+def run_server(host='localhost', port=8080, enable_encryption=False):
     """Run the file transfer server"""
     # Set up signal handlers
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
     server_address = (host, port)
+    if enable_encryption:
+        DFPHandler.cipher = DFPCipher()
+        logger.debug(f"DFP Cipher Init Finish. Please Check Your Public Key: \n{DFPHandler.cipher.rsa_key.publickey().export_key().decode()}")
     httpd = HTTPServer(server_address, DFPHandler)
     
     logger.info(f"Starting file transfer server on {host}:{port}")
