@@ -19,4 +19,5 @@ python main_client.py FILE_PATH --server http://HOST_ADDR:HOST_PORT --workers 5 
 
 Note:
 
-`--encrypt` will be safer, but much slower; e.g. 6M file takes 16.52 s w/ encryption and 0.05s w/o encryption, larger file takes longer time on decryption
+- `--encrypt` (encrypt the file content) will be safer, but much slower; e.g. 6M file takes 16.52 s w/ encryption and 0.05s w/o encryption, larger file takes longer time on decryption
+- Even if `--encrypt` is not enabled, client and server still asks for passkey, because filename and signature will still need cipher to encrypt

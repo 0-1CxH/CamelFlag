@@ -44,12 +44,11 @@ class DFPClient:
             chunk_size (int): Base chunk size in bytes
             chunk_size_variance (float): Random change chunk size range
         """
-
-        if enable_encryption:
-            self.cipher = DFPCipher()
-            logger.debug(f"DFP Cipher Init Finish. Please Check Your Public Key: \n{self.cipher.rsa_key.publickey().export_key().decode()}")
-        else:
-            self.cipher = None
+        
+        self.cipher = DFPCipher()
+        logger.debug(f"DFP Cipher Init Finish. Please Check Your Public Key: \n{self.cipher.rsa_key.publickey().export_key().decode()}")
+        self.enable_encryption = enable_encryption
+        
         self.server_url = server_url.rstrip('/')
         self.max_workers = max_workers
         self.base_chunk_size = chunk_size
@@ -181,7 +180,7 @@ class DFPClient:
                 chunk_size = int(self.base_chunk_size * variation)
                 
                 chunk_data = f.read(chunk_size)
-                if self.cipher is not None:
+                if self.enable_encryption:
                     start_time = time.time()
                     logger.debug("Encrypting current chunk")
                     chunk_data = self.cipher.encrypt(chunk_data, parallel_size=os.cpu_count())
@@ -193,18 +192,22 @@ class DFPClient:
         
         return chunks
     
+    def _sign_current_timestamp(self):
+        enc_ts = self.cipher.encrypt(time.time().__str__(), parallel_size=1)
+        return base64.b64encode(enc_ts).decode('ascii')
+    
     def _create_transfer_session(self, filename, total_size, total_chunks, file_hash):
         """Create a new transfer session"""
         try:
             url = urljoin(self.server_url, '/cs')
-            if self.cipher is not None:
-                filename = self.cipher.encrypt(filename, parallel_size=1)
-                filename = base64.b64encode(filename).decode('utf-8')
+            filename = self.cipher.encrypt(filename, parallel_size=1)
+            filename = base64.b64encode(filename).decode('utf-8')
             params = {
                 'f': filename,
                 's': total_size,
                 'c': total_chunks,
-                'h': file_hash
+                'h': file_hash,
+                'g': self._sign_current_timestamp()
             }
             
             response = self.session.get(url, params=params, timeout=30)
@@ -315,9 +318,6 @@ class DFPClient:
         try:
             url = urljoin(self.server_url, '/k')
             
-            # encrypt
-            # if self.cipher is not None:
-            #     chunk_data = self.cipher.encrypt(chunk_data)
             # Encode chunk data as base64
             chunk_data_b64 = base64.b64encode(chunk_data).decode('utf-8')
             

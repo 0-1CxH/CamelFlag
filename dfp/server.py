@@ -32,6 +32,7 @@ class DFPHandler(BaseHTTPRequestHandler):
     sessions = {}
     session_lock = threading.Lock()
     cipher = None
+    enable_encryption = False
     
     def __init__(self, *args, **kwargs):
         self.max_workers = 5  # Reduced from 10 to prevent connection overload
@@ -75,15 +76,35 @@ class DFPHandler(BaseHTTPRequestHandler):
             logger.error(f"Error in POST request: {e}")
             self._send_error_response(500, f"Internal Server Error: {str(e)}")
     
+    def _authenticate_sign(self, sign):
+        import base64
+        try:
+            # Decrypt the sign
+            decrypted_timestamp = float(self.cipher.decrypt(
+                base64.b64decode(sign.encode()), parallel_size=1
+            ))
+            # Check if timestamp is within +/- 10 seconds
+            current_time = time.time()
+            logger.debug(f"Client Timestamp {decrypted_timestamp}, Server Timestamp {current_time}")
+            return abs(current_time - decrypted_timestamp) <= 30
+        except Exception as e:
+            logger.error(f"Authentication failed: {e}")
+            return False
+    
     def _handle_create_session(self, query_string):
         """Create a new file transfer session"""
         import base64
         try:
             params = parse_qs(query_string)
+            sign = params.get('g', [''])[0]
+            if not self._authenticate_sign(sign):
+                self._send_json_response(403, {"error": "Authentication failed"})
+                return
+
             filename = params.get('f', [''])[0]
-            if self.cipher is not None:
-                filename = base64.b64decode(filename)
-                filename = self.cipher.decrypt(filename, decode=True, parallel_size=1) 
+            # always encrypt filename
+            filename = base64.b64decode(filename)
+            filename = self.cipher.decrypt(filename, decode=True, parallel_size=1) 
             total_size = int(params.get('s', [0])[0])
             total_chunks = int(params.get('c', [0])[0])
             file_hash = params.get('h', [''])[0]
@@ -215,9 +236,6 @@ class DFPHandler(BaseHTTPRequestHandler):
             # Decode chunk data
             try:
                 chunk_data = base64.b64decode(chunk_data_b64)
-                # decrypt
-                # if self.cipher is not None:
-                #     chunk_data = self.cipher.decrypt(chunk_data)
             except Exception as e:
                 return {'success': False, 'error': f'Invalid base64 data: {str(e)}'}
             
@@ -311,7 +329,7 @@ class DFPHandler(BaseHTTPRequestHandler):
                         chunk_file = session['chunk_files'][i]
                         with open(chunk_file, 'rb') as chunk_f:
                             chunk_data = chunk_f.read()
-                            if self.cipher is not None:
+                            if self.enable_encryption:
                                 start_time = time.time()
                                 logger.debug("Decrypting current chunk")
                                 chunk_data = self.cipher.decrypt(chunk_data, parallel_size=os.cpu_count())
@@ -444,9 +462,10 @@ def run_server(host='localhost', port=8080, enable_encryption=False):
     signal.signal(signal.SIGTERM, signal_handler)
     
     server_address = (host, port)
-    if enable_encryption:
-        DFPHandler.cipher = DFPCipher()
-        logger.debug(f"DFP Cipher Init Finish. Please Check Your Public Key: \n{DFPHandler.cipher.rsa_key.publickey().export_key().decode()}")
+    
+    DFPHandler.cipher = DFPCipher()
+    logger.debug(f"DFP Cipher Init Finish. Please Check Your Public Key: \n{DFPHandler.cipher.rsa_key.publickey().export_key().decode()}")
+    DFPHandler.enable_encryption = enable_encryption
     httpd = HTTPServer(server_address, DFPHandler)
     
     logger.info(f"Starting file transfer server on {host}:{port}")

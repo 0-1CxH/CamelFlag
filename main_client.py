@@ -12,10 +12,10 @@ def main():
     parser.add_argument('file_path', help='Path to the file to transfer')
     parser.add_argument('--server', default='http://localhost:8080', 
                        help='Server URL (default: http://localhost:8080)')
-    parser.add_argument('--workers', type=int, default=1, 
+    parser.add_argument('--workers', type=int, default=8, 
                        help='Number of parallel workers (default: 1)')
-    parser.add_argument('--chunk-size', type=int, default=8*1024*1024, 
-                       help='Base chunk size in bytes (default: 8MB)')
+    parser.add_argument('--chunk-size', type=int, default=4*1024*1024, 
+                       help='Base chunk size in bytes (default: 4MB)')
     parser.add_argument('--status', help='Check status of existing session ID')
     parser.add_argument('--encrypt', action='store_true', help='Do encryption before sending chunks')
     
